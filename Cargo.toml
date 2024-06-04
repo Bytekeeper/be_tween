@@ -1,0 +1,20 @@
+[package]
+name = "be_tween"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+keywords = ["gamedev", "tweening"]
+description = "Helper library to support tweening - with inital support for bevy"
+repository = "https://github.com/Bytekeeper/be_tween"
+
+[dependencies]
+interpolation = "0.3"
+bevy_app = {version = "0.13", optional = true}
+bevy_ecs = {version = "0.13", optional = true}
+bevy_transform = {version = "0.13", optional = true}
+bevy_time = {version = "0.13", optional = true}
+glam = {version = "0.25", optional = true}
+
+[features]
+default = ["bevy"]
+bevy = ["dep:bevy_app", "dep:bevy_transform", "dep:bevy_time", "dep:bevy_ecs", "dep:glam"]
