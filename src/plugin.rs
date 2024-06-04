@@ -1,30 +1,9 @@
 use crate::tween::*;
-use bevy_app::prelude::*;
-use bevy_ecs::prelude::*;
-use bevy_time::prelude::*;
-use bevy_transform::prelude::*;
-use glam::*;
+use bevy::prelude::*;
 
 #[derive(Component)]
 pub struct PlayTween<T> {
     pub tween: Tween<T>,
-}
-
-pub struct TweenPlugin;
-
-impl Plugin for TweenPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_systems(PostUpdate, play_tween_animation::<Transform>);
-    }
-}
-
-pub fn play_tween_animation<T: Component>(
-    time: Res<Time<Virtual>>,
-    mut tweens_to_play: Query<(&mut PlayTween<T>, &mut T)>,
-) {
-    for (mut play, mut target) in tweens_to_play.iter_mut() {
-        play.tween.advance(&mut target, time.elapsed());
-    }
 }
 
 pub struct TweenTranslation {
@@ -32,9 +11,64 @@ pub struct TweenTranslation {
     pub end: Vec3,
 }
 
+pub struct TweenScale {
+    pub start: Vec3,
+    pub end: Vec3,
+}
+
+pub struct TweenSpriteColor {
+    pub start: Color,
+    pub end: Color,
+}
+
+pub struct TweenPlugin;
+
+impl<T> PlayTween<T> {
+    pub fn new(tween: Tween<T>) -> Self {
+        Self { tween }
+    }
+}
+
+impl Plugin for TweenPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(
+            PostUpdate,
+            (
+                play_tween_animation::<Transform>,
+                play_tween_animation::<Sprite>,
+            ),
+        );
+    }
+}
+
+pub fn play_tween_animation<T: Component>(
+    time: Res<Time>,
+    mut tweens_to_play: Query<(&mut PlayTween<T>, &mut T)>,
+) {
+    for (mut play, mut target) in tweens_to_play.iter_mut() {
+        play.tween.advance(&mut target, time.delta());
+    }
+}
+
 impl TweenApplier<Transform> for TweenTranslation {
     fn apply(&mut self, target: &mut Transform, value: f32) {
         target.translation = self.start.lerp(self.end, value);
+    }
+}
+
+impl TweenApplier<Sprite> for TweenSpriteColor {
+    fn apply(&mut self, target: &mut Sprite, value: f32) {
+        target.color = Color::lcha_from_array(
+            self.start
+                .lcha_to_vec4()
+                .lerp(self.end.lcha_to_vec4(), value),
+        );
+    }
+}
+
+impl TweenApplier<Transform> for TweenScale {
+    fn apply(&mut self, target: &mut Transform, value: f32) {
+        target.scale = self.start.lerp(self.end, value);
     }
 }
 
@@ -47,7 +81,7 @@ mod tests {
     fn test_transform_tween() {
         // GIVEN
         let mut world = World::new();
-        let mut time = Time::new_with(Virtual::default());
+        let mut time = Time::<()>::default();
         time.advance_by(Duration::from_secs(1));
         world.insert_resource(time);
         let play_tween_id = world.register_system(play_tween_animation::<Transform>);

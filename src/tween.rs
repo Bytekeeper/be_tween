@@ -1,4 +1,6 @@
-use interpolation::{Ease, EaseFunction};
+use bevy::log::error;
+use interpolation::Ease;
+pub use interpolation::EaseFunction;
 use std::time::Duration;
 
 pub trait TweenApplier<T> {
@@ -27,6 +29,13 @@ pub enum Tween<T> {
         index: usize,
         tweens: Vec<Tween<T>>,
     },
+    Parallel {
+        tweens: Vec<Tween<T>>,
+    },
+    Pause {
+        duration: Duration,
+        elapsed: Duration,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,6 +44,7 @@ pub enum TweenProgress {
     Done { surplus: Duration },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RepeatTimes {
     N(usize),
     Infinite,
@@ -87,6 +97,12 @@ impl<T> Tween<T> {
         }
     }
 
+    pub fn parallel(tweens: impl Into<Vec<Tween<T>>>) -> Self {
+        Self::Parallel {
+            tweens: tweens.into(),
+        }
+    }
+
     pub fn advance(&mut self, target: &mut T, mut duration: Duration) -> TweenProgress {
         match self {
             Tween::Once {
@@ -111,29 +127,30 @@ impl<T> Tween<T> {
                 tween,
                 times,
                 count,
-            } => {
-                while !duration.is_zero() {
-                    let done = match times {
-                        RepeatTimes::N(amount) => count >= amount,
-                        RepeatTimes::Infinite => false,
-                    };
-                    if done {
-                        return TweenProgress::Done { surplus: duration };
+            } => loop {
+                let done = match times {
+                    RepeatTimes::N(amount) => count >= amount,
+                    RepeatTimes::Infinite => false,
+                };
+                if done {
+                    return TweenProgress::Done { surplus: duration };
+                }
+                let delegate_result = tween.advance(target, duration);
+                match delegate_result {
+                    TweenProgress::Done { surplus } => {
+                        *count += 1;
+                        if duration <= surplus && *times == RepeatTimes::Infinite {
+                            error!("Found infinite repeating tween with zero duration child (infinite loop)");
+                            return TweenProgress::Running;
+                        }
+                        duration = surplus;
+                        tween.reset();
                     }
-                    let delegate_result = tween.advance(target, duration);
-                    match delegate_result {
-                        TweenProgress::Done { surplus } => {
-                            *count += 1;
-                            duration = surplus;
-                            tween.reset();
-                        }
-                        TweenProgress::Running => {
-                            break;
-                        }
+                    TweenProgress::Running => {
+                        break TweenProgress::Running;
                     }
                 }
-                TweenProgress::Running
-            }
+            },
             Tween::Sequence { index, tweens } => {
                 while let Some(tween) = tweens.get_mut(*index) {
                     let delegate_result = tween.advance(target, duration);
@@ -148,6 +165,41 @@ impl<T> Tween<T> {
                     }
                 }
                 TweenProgress::Done { surplus: duration }
+            }
+            Tween::Parallel { tweens } => {
+                tweens
+                    .iter_mut()
+                    .fold(TweenProgress::Done { surplus: duration }, |acc, tween| {
+                        let delegate_result = tween.advance(target, duration);
+                        if let (
+                            TweenProgress::Done {
+                                surplus: acc_surplus,
+                            },
+                            TweenProgress::Done {
+                                surplus: delegate_surplus,
+                            },
+                        ) = (acc, delegate_result)
+                        {
+                            TweenProgress::Done {
+                                surplus: acc_surplus.min(delegate_surplus),
+                            }
+                        } else {
+                            TweenProgress::Running
+                        }
+                    })
+            }
+            Tween::Pause {
+                duration: tween_duration,
+                elapsed,
+            } => {
+                *elapsed += duration;
+                if elapsed >= tween_duration {
+                    let surplus = *elapsed - *tween_duration;
+                    *elapsed = *tween_duration;
+                    TweenProgress::Done { surplus }
+                } else {
+                    TweenProgress::Running
+                }
             }
         }
     }
@@ -173,6 +225,12 @@ impl<T> Tween<T> {
                 }
                 *index = 0;
             }
+            Tween::Parallel { tweens } => {
+                for tween in tweens.iter_mut() {
+                    tween.reset();
+                }
+            }
+            Tween::Pause { elapsed, .. } => *elapsed = Duration::ZERO,
         }
     }
 }
@@ -317,6 +375,29 @@ mod tests {
         let mut value = 0.0;
         let progress = tween.advance(&mut value, Duration::from_millis(20000));
         assert_eq!(progress, TweenProgress::Running);
-        assert_eq!(value, 10.0);
+        assert_eq!(value, 0.0);
+    }
+
+    #[test]
+    fn tween_parallel() {
+        let mut tween = Tween::parallel(vec![
+            Tween::new(Duration::from_secs(1), Lerp, 2.0_f32),
+            Tween::repeat(
+                RepeatTimes::N(2),
+                Tween::new(Duration::from_secs(1), Lerp, 4.0_f32),
+            ),
+        ]);
+
+        let mut value = 0.0;
+        let progress = tween.advance(&mut value, Duration::from_millis(1000));
+        assert_eq!(progress, TweenProgress::Running);
+
+        let progress = tween.advance(&mut value, Duration::from_millis(1000));
+        assert_eq!(
+            progress,
+            TweenProgress::Done {
+                surplus: Duration::ZERO
+            }
+        );
     }
 }
