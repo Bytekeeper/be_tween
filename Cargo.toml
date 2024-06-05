@@ -9,7 +9,7 @@ repository = "https://github.com/Bytekeeper/be_tween"
 
 [dependencies]
 interpolation = "0.3"
-bevy = {version = "0.13", optional = true}
+bevy = {version = "0.13", optional = true, default-features = false, features = ["bevy_sprite"]}
 
 [features]
 default = ["bevy"]
