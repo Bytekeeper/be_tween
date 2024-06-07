@@ -2,8 +2,9 @@ use crate::tween::*;
 use bevy::prelude::*;
 
 #[derive(Component)]
-pub struct PlayTween<T> {
-    pub tween: Tween<T>,
+pub struct PlayTween<T, E> {
+    pub tween: Tween<T, E>,
+    pub despawn: bool,
 }
 
 pub struct TweenTranslation {
@@ -21,32 +22,67 @@ pub struct TweenSpriteColor {
     pub end: Color,
 }
 
-pub struct TweenPlugin;
+pub struct TweenPlugin<E> {
+    _phantom: std::marker::PhantomData<E>,
+}
 
-impl<T> PlayTween<T> {
-    pub fn new(tween: Tween<T>) -> Self {
-        Self { tween }
+impl Event for NoEvent {}
+
+impl<T, E> PlayTween<T, E> {
+    pub fn new(tween: Tween<T, E>) -> Self {
+        Self {
+            tween,
+            despawn: false,
+        }
+    }
+
+    pub fn despawn(self) -> Self {
+        Self {
+            despawn: true,
+            ..self
+        }
     }
 }
 
-impl Plugin for TweenPlugin {
+impl<E> TweenPlugin<E> {
+    pub fn new() -> Self {
+        Self {
+            _phantom: Default::default(),
+        }
+    }
+}
+
+impl<E> Default for TweenPlugin<E> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<E: Event + Clone> Plugin for TweenPlugin<E> {
     fn build(&self, app: &mut App) {
-        app.add_systems(
-            PostUpdate,
-            (
-                play_tween_animation::<Transform>,
-                play_tween_animation::<Sprite>,
-            ),
-        );
+        app.add_event::<NoEvent>();
     }
 }
 
-pub fn play_tween_animation<T: Component>(
+impl<'w, E: Event + Clone> EventSender<E> for EventWriter<'w, E> {
+    fn send(&mut self, event: &E) {
+        EventWriter::send(self, event.clone());
+    }
+}
+
+pub fn play_tween_animation<T: Component, E: Event + Clone>(
     time: Res<Time>,
-    mut tweens_to_play: Query<(&mut PlayTween<T>, &mut T)>,
+    mut tweens_to_play: Query<(Entity, &mut PlayTween<T, E>, &mut T)>,
+    mut event_writer: EventWriter<E>,
+    mut commands: Commands,
 ) {
-    for (mut play, mut target) in tweens_to_play.iter_mut() {
-        play.tween.advance(&mut target, time.delta());
+    for (entity, mut play, mut target) in tweens_to_play.iter_mut() {
+        let result = play
+            .tween
+            .advance(&mut target, &mut event_writer, time.delta());
+        if play.despawn && matches!(result, TweenProgress::Done { .. }) {
+            commands.entity(entity).despawn();
+        }
     }
 }
 
@@ -56,6 +92,7 @@ impl TweenApplier<Transform> for TweenTranslation {
     }
 }
 
+/// Please note this uses LCH color space and RGB
 impl TweenApplier<Sprite> for TweenSpriteColor {
     fn apply(&mut self, target: &mut Sprite, value: f32) {
         target.color = Color::lcha_from_array(
@@ -77,6 +114,9 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
+    #[derive(Event, Clone)]
+    struct TestEvent;
+
     #[test]
     fn test_transform_tween() {
         // GIVEN
@@ -84,7 +124,8 @@ mod tests {
         let mut time = Time::<()>::default();
         time.advance_by(Duration::from_secs(1));
         world.insert_resource(time);
-        let play_tween_id = world.register_system(play_tween_animation::<Transform>);
+        world.init_resource::<Events<NoEvent>>();
+        let play_tween_id = world.register_system(play_tween_animation::<Transform, NoEvent>);
         let play_tween = PlayTween {
             tween: Tween::new(
                 Duration::from_secs(2),
@@ -94,6 +135,7 @@ mod tests {
                     end: Vec3::X,
                 },
             ),
+            despawn: false,
         };
         let to_transform = world.spawn((Transform::default(), play_tween)).id();
 
@@ -103,5 +145,28 @@ mod tests {
         // THEN
         let transform = world.get::<Transform>(to_transform).unwrap();
         assert_eq!(transform.translation, Vec3::X * 0.5);
+    }
+
+    #[test]
+    fn test_tween_event() {
+        // GIVEN
+        let mut world = World::new();
+        let mut time = Time::<()>::default();
+        time.advance_by(Duration::from_secs(3));
+        world.insert_resource(time);
+        world.init_resource::<Events<TestEvent>>();
+        let play_tween_id = world.register_system(play_tween_animation::<Transform, TestEvent>);
+        let play_tween = PlayTween::new(
+            Tween::<Transform, TestEvent>::pause(Duration::from_secs(2)).with_completed(TestEvent),
+        );
+        world.spawn((Transform::default(), play_tween));
+
+        // WHEN
+        world.run_system(play_tween_id).unwrap();
+
+        // THEN
+        let events = world.get_resource::<Events<TestEvent>>().unwrap();
+        let mut reader = events.get_reader();
+        assert_eq!(reader.read(&events).count(), 1);
     }
 }
