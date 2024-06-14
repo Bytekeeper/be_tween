@@ -1,10 +1,12 @@
 use crate::tween::*;
 use bevy::prelude::*;
+use std::marker::PhantomData;
 
 #[derive(Component)]
-pub struct PlayTween<T, E> {
-    pub tween: Tween<T, E>,
-    pub despawn: bool,
+pub struct PlayTween<T, E, I> {
+    tween: Tween<T, E>,
+    despawn: bool,
+    _time: PhantomData<I>,
 }
 
 pub struct TweenTranslation {
@@ -28,11 +30,18 @@ pub struct TweenPlugin<E> {
 
 impl Event for NoEvent {}
 
-impl<T, E> PlayTween<T, E> {
+impl<T, E> PlayTween<T, E, ()> {
     pub fn new(tween: Tween<T, E>) -> Self {
+        Self::new_with_time(tween)
+    }
+}
+
+impl<T, E, I> PlayTween<T, E, I> {
+    pub fn new_with_time(tween: Tween<T, E>) -> Self {
         Self {
             tween,
             despawn: false,
+            _time: default(),
         }
     }
 
@@ -60,7 +69,7 @@ impl<E> Default for TweenPlugin<E> {
 
 impl<E: Event + Clone> Plugin for TweenPlugin<E> {
     fn build(&self, app: &mut App) {
-        app.add_event::<NoEvent>();
+        app.add_event::<NoEvent>().add_event::<E>();
     }
 }
 
@@ -70,9 +79,10 @@ impl<'w, E: Event + Clone> EventSender<E> for EventWriter<'w, E> {
     }
 }
 
-pub fn play_tween_animation<T: Component, E: Event + Clone>(
-    time: Res<Time>,
-    mut tweens_to_play: Query<(Entity, &mut PlayTween<T, E>, &mut T)>,
+pub fn play_tween_animation<T: Component, E: Event + Clone, I: Default + Send + Sync + 'static>(
+    time: Res<Time<I>>,
+    real_time: Res<Time<Real>>,
+    mut tweens_to_play: Query<(Entity, &mut PlayTween<T, E, I>, &mut T)>,
     mut event_writer: EventWriter<E>,
     mut commands: Commands,
 ) {
@@ -124,19 +134,17 @@ mod tests {
         let mut time = Time::<()>::default();
         time.advance_by(Duration::from_secs(1));
         world.insert_resource(time);
+        world.insert_resource(Time::<Real>::default());
         world.init_resource::<Events<NoEvent>>();
-        let play_tween_id = world.register_system(play_tween_animation::<Transform, NoEvent>);
-        let play_tween = PlayTween {
-            tween: Tween::new(
-                Duration::from_secs(2),
-                Lerp,
-                TweenTranslation {
-                    start: Vec3::ZERO,
-                    end: Vec3::X,
-                },
-            ),
-            despawn: false,
-        };
+        let play_tween_id = world.register_system(play_tween_animation::<Transform, NoEvent, ()>);
+        let play_tween = PlayTween::new(Tween::new(
+            Duration::from_secs(2),
+            Lerp,
+            TweenTranslation {
+                start: Vec3::ZERO,
+                end: Vec3::X,
+            },
+        ));
         let to_transform = world.spawn((Transform::default(), play_tween)).id();
 
         // WHEN
@@ -154,8 +162,9 @@ mod tests {
         let mut time = Time::<()>::default();
         time.advance_by(Duration::from_secs(3));
         world.insert_resource(time);
+        world.insert_resource(Time::<Real>::default());
         world.init_resource::<Events<TestEvent>>();
-        let play_tween_id = world.register_system(play_tween_animation::<Transform, TestEvent>);
+        let play_tween_id = world.register_system(play_tween_animation::<Transform, TestEvent, ()>);
         let play_tween = PlayTween::new(
             Tween::<Transform, TestEvent>::pause(Duration::from_secs(2)).with_completed(TestEvent),
         );
