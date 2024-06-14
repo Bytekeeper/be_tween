@@ -81,7 +81,6 @@ impl<'w, E: Event + Clone> EventSender<E> for EventWriter<'w, E> {
 
 pub fn play_tween_animation<T: Component, E: Event + Clone, I: Default + Send + Sync + 'static>(
     time: Res<Time<I>>,
-    real_time: Res<Time<Real>>,
     mut tweens_to_play: Query<(Entity, &mut PlayTween<T, E, I>, &mut T)>,
     mut event_writer: EventWriter<E>,
     mut commands: Commands,
@@ -177,5 +176,34 @@ mod tests {
         let events = world.get_resource::<Events<TestEvent>>().unwrap();
         let mut reader = events.get_reader();
         assert_eq!(reader.read(&events).count(), 1);
+    }
+
+    #[test]
+    fn test_real_time() {
+        // GIVEN
+        let mut world = World::new();
+        let mut time = Time::<()>::default();
+        time.advance_by(Duration::from_secs(2));
+        world.insert_resource(time);
+        let mut time = Time::<Real>::default();
+        time.advance_by(Duration::from_secs(1));
+        world.insert_resource(time);
+        world.init_resource::<Events<TestEvent>>();
+        let play_tween_id_real =
+            world.register_system(play_tween_animation::<Transform, TestEvent, Real>);
+        let play_tween_id_virtual =
+            world.register_system(play_tween_animation::<Transform, TestEvent, ()>);
+        let play_tween = PlayTween::<_, _, Real>::new_with_time(
+            Tween::<Transform, TestEvent>::pause(Duration::from_secs(2)).with_completed(TestEvent),
+        );
+        world.spawn((Transform::default(), play_tween));
+
+        // WHEN
+        world.run_system(play_tween_id_real).unwrap();
+        world.run_system(play_tween_id_virtual).unwrap();
+
+        // THEN
+        let events = world.get_resource::<Events<TestEvent>>().unwrap();
+        assert!(events.is_empty());
     }
 }
