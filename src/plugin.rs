@@ -2,24 +2,33 @@ use crate::tween::*;
 use bevy::prelude::*;
 use std::marker::PhantomData;
 
-#[derive(Component)]
+#[derive(Component, Clone)]
 pub struct PlayTween<T, E, I> {
     tween: Tween<T, E>,
     despawn: bool,
     _time: PhantomData<I>,
 }
 
+#[derive(Default, Debug, Clone, Copy)]
 pub struct TweenTranslation {
     pub start: Vec3,
     pub end: Vec3,
 }
 
+#[derive(Default, Debug, Clone, Copy)]
 pub struct TweenScale {
     pub start: Vec3,
     pub end: Vec3,
 }
 
+#[derive(Default, Debug, Clone, Copy)]
 pub struct TweenSpriteColor {
+    pub start: Color,
+    pub end: Color,
+}
+
+#[derive(Default, Debug, Clone, Copy)]
+pub struct TweenBackgroundColor {
     pub start: Color,
     pub end: Color,
 }
@@ -32,6 +41,12 @@ impl Event for NoEvent {}
 
 impl<T, E> PlayTween<T, E, ()> {
     pub fn new(tween: Tween<T, E>) -> Self {
+        Self::new_with_time(tween)
+    }
+}
+
+impl<T, E> PlayTween<T, E, Real> {
+    pub fn new_real_time(tween: Tween<T, E>) -> Self {
         Self::new_with_time(tween)
     }
 }
@@ -98,6 +113,16 @@ pub fn play_tween_animation<T: Component, E: Event + Clone, I: Default + Send + 
 impl TweenApplier<Transform> for TweenTranslation {
     fn apply(&mut self, target: &mut Transform, value: f32) {
         target.translation = self.start.lerp(self.end, value);
+    }
+}
+
+impl TweenApplier<BackgroundColor> for TweenBackgroundColor {
+    fn apply(&mut self, target: &mut BackgroundColor, value: f32) {
+        target.0 = Color::lcha_from_array(
+            self.start
+                .lcha_to_vec4()
+                .lerp(self.end.lcha_to_vec4(), value),
+        );
     }
 }
 

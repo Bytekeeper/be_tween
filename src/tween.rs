@@ -1,15 +1,19 @@
 use bevy::log::error;
+use dyn_clone::DynClone;
 use interpolation::Ease;
 pub use interpolation::EaseFunction;
 use std::time::Duration;
 
-pub trait TweenApplier<T> {
+pub trait TweenApplier<T>: Send + Sync + DynClone {
     fn apply(&mut self, target: &mut T, value: f32);
 }
 
-pub trait Interpolator {
+pub trait Interpolator: Send + Sync + 'static + DynClone {
     fn interpolate(&self, position: f32) -> f32;
 }
+
+dyn_clone::clone_trait_object!(<T> TweenApplier<T>);
+dyn_clone::clone_trait_object!(Interpolator);
 
 pub trait EventSender<E> {
     fn send(&mut self, event: &E);
@@ -18,14 +22,16 @@ pub trait EventSender<E> {
 #[derive(Copy, Clone)]
 pub struct NoEvent;
 
+#[derive(Copy, Clone)]
 pub struct Lerp;
 
+#[derive(Clone)]
 pub enum Tween<T, E> {
     Once {
         duration: Duration,
         elapsed: Duration,
-        function: Box<dyn Interpolator + Sync + Send + 'static>,
-        applier: Box<dyn TweenApplier<T> + Sync + Send + 'static>,
+        function: Box<dyn Interpolator>,
+        applier: Box<dyn TweenApplier<T> + 'static>,
         completed_event: Option<E>,
     },
     Repeat {
