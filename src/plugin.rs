@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use std::marker::PhantomData;
 
 #[derive(Clone)]
-pub struct Start<T>(T);
+pub struct Start<T>(pub T);
 
 impl TweenApplier<TweenBuffer<TweenTranslation>> for Start<TweenTranslation> {
     fn apply(&mut self, target: &mut TweenBuffer<TweenTranslation>, value: f32) {
