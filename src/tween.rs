@@ -1,4 +1,3 @@
-use bevy::log::error;
 use dyn_clone::DynClone;
 use interpolation::Ease;
 pub use interpolation::EaseFunction;
@@ -209,7 +208,8 @@ impl<T, E> Tween<T, E> {
                     TweenProgress::Done { surplus } => {
                         *count += 1;
                         if duration <= surplus && *times == RepeatTimes::Infinite {
-                            error!("Found infinite repeating tween with zero duration child (infinite loop)");
+                            #[cfg(features = "bevy")]
+                            bevy::log::error!("Found infinite repeating tween with zero duration child (infinite loop)");
                             return TweenProgress::Running;
                         }
                         duration = surplus;
@@ -324,7 +324,8 @@ impl<T, E> Tween<T, E> {
                     TweenProgress::Done { surplus } => {
                         *count += 1;
                         if duration <= surplus && *times == RepeatTimes::Infinite {
-                            error!("Found infinite repeating tween with zero duration child (infinite loop)");
+                            #[cfg(features = "bevy")]
+                            bevy::log::error!("Found infinite repeating tween with zero duration child (infinite loop)");
                             return TweenProgress::Running;
                         }
                         duration = surplus;

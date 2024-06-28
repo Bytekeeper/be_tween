@@ -2,6 +2,60 @@ use crate::tween::*;
 use bevy::prelude::*;
 use std::marker::PhantomData;
 
+#[derive(Clone)]
+pub struct Start<T>(T);
+
+impl TweenApplier<TweenBuffer<TweenTranslation>> for Start<TweenTranslation> {
+    fn apply(&mut self, target: &mut TweenBuffer<TweenTranslation>, value: f32) {
+        target.tween.start = self.0.start.lerp(self.0.end, value);
+    }
+}
+
+#[derive(Clone)]
+pub struct End<T>(pub T);
+
+#[derive(Component, Clone, Debug)]
+pub struct TweenBuffer<T> {
+    pub tween: T,
+}
+
+impl<T> TweenBuffer<T> {
+    pub fn new(tween: T) -> Self {
+        Self { tween }
+    }
+}
+
+impl TweenApplier<TweenBuffer<TweenTranslation>> for End<TweenTranslation> {
+    fn apply(&mut self, target: &mut TweenBuffer<TweenTranslation>, value: f32) {
+        target.tween.end = self.0.start.lerp(self.0.end, value);
+    }
+}
+
+#[derive(Clone)]
+pub struct BufferApplier<T> {
+    _phantom: PhantomData<T>,
+}
+
+impl<T> BufferApplier<T> {
+    pub fn new() -> Self {
+        Self {
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl TweenApplier<(Transform, TweenBuffer<TweenTranslation>)> for BufferApplier<TweenTranslation> {
+    fn apply(&mut self, target: &mut (Transform, TweenBuffer<TweenTranslation>), value: f32) {
+        target.1.tween.apply(&mut target.0, value);
+    }
+}
+
+#[derive(Default, Debug, Clone, Copy)]
+pub struct TweenTweenTranslation {
+    pub start: Vec3,
+    pub end: Vec3,
+}
+
 #[derive(Component, Clone)]
 pub struct PlayTween<T, E, I> {
     tween: Tween<T, E>,
@@ -91,6 +145,36 @@ impl<E: Event + Clone> Plugin for TweenPlugin<E> {
 impl<'w, E: Event + Clone> EventSender<E> for EventWriter<'w, E> {
     fn send(&mut self, event: &E) {
         EventWriter::send(self, event.clone());
+    }
+}
+
+pub fn play_buffered_tween_animation<
+    T: Component + Clone,
+    W: TweenApplier<T> + 'static + Clone,
+    E: Event + Clone,
+    I: Default + Send + Sync + 'static,
+>(
+    time: Res<Time<I>>,
+    mut tweens_to_play: Query<(
+        Entity,
+        &mut PlayTween<(T, TweenBuffer<W>), E, I>,
+        &mut T,
+        &mut TweenBuffer<W>,
+    )>,
+    mut event_writer: EventWriter<E>,
+    mut commands: Commands,
+) {
+    for (entity, mut play, mut target, mut tween_buffer) in tweens_to_play.iter_mut() {
+        // TODO find a way without moving data around
+        let mut tmp_target = (target.clone(), tween_buffer.clone());
+        let result = play
+            .tween
+            .advance(&mut tmp_target, &mut event_writer, time.delta());
+        *target = tmp_target.0;
+        *tween_buffer = tmp_target.1;
+        if play.despawn && matches!(result, TweenProgress::Done { .. }) {
+            commands.entity(entity).despawn();
+        }
     }
 }
 
@@ -218,7 +302,7 @@ mod tests {
             world.register_system(play_tween_animation::<Transform, TestEvent, Real>);
         let play_tween_id_virtual =
             world.register_system(play_tween_animation::<Transform, TestEvent, ()>);
-        let play_tween = PlayTween::<_, _, Real>::new_with_time(
+        let play_tween = PlayTween::new_real_time(
             Tween::<Transform, TestEvent>::pause(Duration::from_secs(2)).with_completed(TestEvent),
         );
         world.spawn((Transform::default(), play_tween));
@@ -230,5 +314,69 @@ mod tests {
         // THEN
         let events = world.get_resource::<Events<TestEvent>>().unwrap();
         assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_tweening_tweens() {
+        let mut world = World::new();
+        let mut time = Time::<()>::default();
+        time.advance_by(Duration::from_secs(2));
+        world.insert_resource(time);
+        let mut time = Time::<Real>::default();
+        time.advance_by(Duration::from_secs(1));
+        world.insert_resource(time);
+        world.insert_resource(time);
+        world.init_resource::<Events<NoEvent>>();
+        let play_tween_id_real = world.register_system(
+            play_buffered_tween_animation::<Transform, TweenTranslation, NoEvent, Real>,
+        );
+        let play_tween_tween = world
+            .register_system(play_tween_animation::<TweenBuffer<TweenTranslation>, NoEvent, ()>);
+        let play_tween_tween_real = world
+            .register_system(play_tween_animation::<TweenBuffer<TweenTranslation>, NoEvent, Real>);
+
+        let real_time_tween = PlayTween::new_real_time(Tween::new(
+            Duration::from_secs(2),
+            Lerp,
+            Start(TweenTranslation {
+                start: Vec3::ZERO,
+                end: Vec3::X,
+            }),
+        ));
+        let virtual_time_tween = PlayTween::new(Tween::new(
+            Duration::from_secs(2),
+            Lerp,
+            End(TweenTranslation {
+                start: Vec3::ZERO,
+                end: Vec3::X,
+            }),
+        ));
+        let to_transform = world
+            .spawn((
+                Transform::default(),
+                TweenBuffer::new(TweenTranslation::default()),
+                PlayTween::new_real_time(Tween::new(
+                    Duration::from_secs(2),
+                    Lerp,
+                    BufferApplier::new(),
+                )),
+                real_time_tween,
+                virtual_time_tween,
+            ))
+            .id();
+
+        // WHEN
+        world.run_system(play_tween_tween).unwrap();
+        world.run_system(play_tween_tween_real).unwrap();
+        world.run_system(play_tween_id_real).unwrap();
+
+        // THEN
+        let transform = world.get::<Transform>(to_transform).unwrap();
+        assert_eq!(transform.translation, Vec3::X * 0.75);
+        let tween_buffer = world
+            .get::<TweenBuffer<TweenTranslation>>(to_transform)
+            .unwrap();
+        assert_eq!(tween_buffer.tween.start, Vec3::X * 0.5);
+        assert_eq!(tween_buffer.tween.end, Vec3::X);
     }
 }
