@@ -1,6 +1,6 @@
 [package]
 name = "be_tween"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 license = "Apache-2.0"
 keywords = ["gamedev", "tweening"]
@@ -9,7 +9,7 @@ repository = "https://github.com/Bytekeeper/be_tween"
 
 [dependencies]
 interpolation = "0.3"
-bevy = {version = "0.13", optional = true, default-features = false, features = ["bevy_sprite", "bevy_ui"]}
+bevy = {version = "0.14", optional = true, default-features = false, features = ["bevy_sprite", "bevy_ui"]}
 dyn-clone = "1.0"
 
 [features]

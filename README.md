@@ -14,4 +14,5 @@ I did at first try to tweak bevy_tweening. But in the end decided to write my ow
 
 ## Version
 | bevy | be_tween |
+| 0.14 | 0.5 |
 | 0.13 | 0.4 |

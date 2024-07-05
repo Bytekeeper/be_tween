@@ -18,6 +18,7 @@ pub trait EventSender<E> {
     fn send(&mut self, event: &E);
 }
 
+#[cfg_attr(feature = "bevy", derive(bevy::prelude::Component))]
 #[derive(Copy, Clone, Default)]
 pub struct NoEvent;
 
@@ -218,7 +219,7 @@ impl<T, E> Tween<T, E> {
                     TweenProgress::Done { surplus } => {
                         *count += 1;
                         if duration <= surplus && *times == RepeatTimes::Infinite {
-                            #[cfg(features = "bevy")]
+                            #[cfg(feature = "bevy")]
                             bevy::log::error!("Found infinite repeating tween with zero duration child (infinite loop)");
                             return TweenProgress::Running;
                         }

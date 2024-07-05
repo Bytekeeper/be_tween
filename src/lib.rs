@@ -92,8 +92,8 @@
 //!     Duration::from_secs(1),
 //!     EaseFunction::QuadraticInOut,
 //!     TweenSpriteColor {
-//!         start: Color::WHITE,
-//!         end: Color::RED
+//!         start: LinearRgba::WHITE.into(),
+//!         end: LinearRgba::RED.into()
 //!     })]
 //! );
 //!

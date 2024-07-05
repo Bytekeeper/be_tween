@@ -1,4 +1,5 @@
 use crate::tween::*;
+use bevy::color::ColorRange;
 use bevy::prelude::*;
 use std::marker::PhantomData;
 
@@ -232,22 +233,14 @@ impl TweenApplier<Transform> for TweenTranslation {
 
 impl TweenApplier<BackgroundColor> for TweenBackgroundColor {
     fn apply(&mut self, target: &mut BackgroundColor, value: f32) {
-        target.0 = Color::lcha_from_array(
-            self.start
-                .lcha_to_vec4()
-                .lerp(self.end.lcha_to_vec4(), value),
-        );
+        target.0 = (self.start..self.end).at(value);
     }
 }
 
 /// Please note this uses LCH color space and RGB
 impl TweenApplier<Sprite> for TweenSpriteColor {
     fn apply(&mut self, target: &mut Sprite, value: f32) {
-        target.color = Color::lcha_from_array(
-            self.start
-                .lcha_to_vec4()
-                .lerp(self.end.lcha_to_vec4(), value),
-        );
+        target.color = (self.start..self.end).at(value);
     }
 }
 
