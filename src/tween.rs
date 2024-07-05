@@ -18,7 +18,7 @@ pub trait EventSender<E> {
     fn send(&mut self, event: &E);
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 pub struct NoEvent;
 
 #[derive(Copy, Clone)]
@@ -53,6 +53,16 @@ pub enum Tween<T, E> {
         elapsed: Duration,
         completed_event: Option<E>,
     },
+}
+
+impl<T, E> Default for Tween<T, E> {
+    fn default() -> Self {
+        Self::Pause {
+            duration: Duration::ZERO,
+            elapsed: Duration::ZERO,
+            completed_event: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

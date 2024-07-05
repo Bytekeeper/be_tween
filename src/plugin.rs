@@ -14,9 +14,9 @@ impl TweenApplier<TweenBuffer<TweenTranslation>> for Start<TweenTranslation> {
 #[derive(Clone)]
 pub struct End<T>(pub T);
 
-#[derive(Component, Clone, Debug)]
+#[derive(Component, Clone, Debug, Default)]
 pub struct TweenBuffer<T> {
-    pub tween: T,
+    tween: T,
 }
 
 impl<T> TweenBuffer<T> {
@@ -29,6 +29,17 @@ impl TweenApplier<TweenBuffer<TweenTranslation>> for End<TweenTranslation> {
     fn apply(&mut self, target: &mut TweenBuffer<TweenTranslation>, value: f32) {
         target.tween.end = self.0.start.lerp(self.0.end, value);
     }
+}
+
+#[derive(Bundle, Default)]
+pub struct PlayBufferedTweenBundle<
+    T: Component,
+    E: Event,
+    B: 'static + Send + Sync,
+    I: 'static + Send + Sync = (),
+> {
+    pub play_tween: PlayTween<(T, TweenBuffer<B>), E, I>,
+    pub buffer: TweenBuffer<B>,
 }
 
 #[derive(Clone)]
@@ -56,7 +67,7 @@ pub struct TweenTweenTranslation {
     pub end: Vec3,
 }
 
-#[derive(Component, Clone)]
+#[derive(Component, Clone, Default)]
 pub struct PlayTween<T, E, I> {
     tween: Tween<T, E>,
     despawn: bool,
@@ -87,7 +98,7 @@ pub struct TweenBackgroundColor {
     pub end: Color,
 }
 
-pub struct TweenPlugin<E> {
+pub struct DefaultTweenPlugin<E> {
     _phantom: std::marker::PhantomData<E>,
 }
 
@@ -122,7 +133,7 @@ impl<T, E, I> PlayTween<T, E, I> {
     }
 }
 
-impl<E> TweenPlugin<E> {
+impl<E> DefaultTweenPlugin<E> {
     pub fn new() -> Self {
         Self {
             _phantom: Default::default(),
@@ -130,15 +141,30 @@ impl<E> TweenPlugin<E> {
     }
 }
 
-impl<E> Default for TweenPlugin<E> {
+impl<E> Default for DefaultTweenPlugin<E> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<E: Event + Clone> Plugin for TweenPlugin<E> {
+impl<E: Event + Clone> Plugin for DefaultTweenPlugin<E> {
     fn build(&self, app: &mut App) {
-        app.add_event::<NoEvent>().add_event::<E>();
+        app.add_event::<E>().add_systems(
+            Update,
+            (
+                play_tween_animation::<Transform, E, ()>,
+                play_tween_animation::<Transform, E, Real>,
+                play_tween_animation::<Sprite, E, ()>,
+                play_tween_animation::<Sprite, E, Real>,
+                play_tween_animation::<BackgroundColor, E, ()>,
+                play_tween_animation::<BackgroundColor, E, Real>,
+                play_tween_animation::<TweenBuffer<TweenTranslation>, E, ()>,
+                play_tween_animation::<TweenBuffer<TweenTranslation>, E, Real>,
+                play_buffered_tween_animation::<Transform, TweenTranslation, E, ()>,
+                play_buffered_tween_animation::<Transform, TweenTranslation, E, Real>,
+            )
+                .chain(),
+        );
     }
 }
 
@@ -159,12 +185,16 @@ pub fn play_buffered_tween_animation<
         Entity,
         &mut PlayTween<(T, TweenBuffer<W>), E, I>,
         &mut T,
-        &mut TweenBuffer<W>,
+        Option<&mut TweenBuffer<W>>,
     )>,
     mut event_writer: EventWriter<E>,
     mut commands: Commands,
 ) {
-    for (entity, mut play, mut target, mut tween_buffer) in tweens_to_play.iter_mut() {
+    for (entity, mut play, mut target, tween_buffer) in tweens_to_play.iter_mut() {
+        let Some(mut tween_buffer) = tween_buffer else {
+            error!("Buffered PlayTween without Buffer component");
+            continue;
+        };
         // TODO find a way without moving data around
         let mut tmp_target = (target.clone(), tween_buffer.clone());
         let result = play
@@ -354,12 +384,14 @@ mod tests {
         let to_transform = world
             .spawn((
                 Transform::default(),
-                TweenBuffer::new(TweenTranslation::default()),
-                PlayTween::new_real_time(Tween::new(
-                    Duration::from_secs(2),
-                    Lerp,
-                    BufferApplier::new(),
-                )),
+                PlayBufferedTweenBundle {
+                    play_tween: PlayTween::new_real_time(Tween::new(
+                        Duration::from_secs(2),
+                        Lerp,
+                        BufferApplier::new(),
+                    )),
+                    ..default()
+                },
                 real_time_tween,
                 virtual_time_tween,
             ))
