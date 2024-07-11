@@ -1,3 +1,8 @@
+[![Build](https://github.com/Bytekeeper/be_tween/actions/workflows/rust.yml/badge.svg)](https://github.com/Bytekeeper/be_tween/actions/workflows/rust.yml)
+[![crates.io](https://img.shields.io/crates/v/be_tween.svg)](https://crates.io/crates/be_tween)
+[![docs.rs](https://img.shields.io/docsrs/be_tween)](https://docs.rs/be_tween/)
+
+
 # Be-Tween 
 This will allow you to write rather complex tween sequences. 
 Although Bevy is one of the main targets, this library will work just fine without it.
