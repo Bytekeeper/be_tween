@@ -1,3 +1,4 @@
+#![allow(clippy::type_complexity)]
 //! Be-Tween
 //!
 //! Provides tweening values over time.

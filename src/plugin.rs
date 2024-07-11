@@ -43,7 +43,7 @@ pub struct PlayBufferedTweenBundle<
     pub buffer: TweenBuffer<B>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct BufferApplier<T> {
     _phantom: PhantomData<T>,
 }
@@ -307,7 +307,7 @@ mod tests {
         // THEN
         let events = world.get_resource::<Events<TestEvent>>().unwrap();
         let mut reader = events.get_reader();
-        assert_eq!(reader.read(&events).count(), 1);
+        assert_eq!(reader.read(events).count(), 1);
     }
 
     #[test]

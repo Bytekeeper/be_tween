@@ -103,8 +103,8 @@ impl<E> EventSender<E> for NoEvent {
 impl<T> Tween<T, NoEvent> {
     pub fn new(
         duration: Duration,
-        function: impl Interpolator + Sync + Send + 'static,
-        applier: impl TweenApplier<T> + Sync + Send + 'static,
+        function: impl Interpolator + 'static,
+        applier: impl TweenApplier<T> + 'static,
     ) -> Self {
         Self::Once {
             duration,
@@ -119,8 +119,8 @@ impl<T> Tween<T, NoEvent> {
 impl<T, E> Tween<T, E> {
     pub fn new_with_event(
         duration: Duration,
-        function: impl Interpolator + Sync + Send + 'static,
-        applier: impl TweenApplier<T> + Sync + Send + 'static,
+        function: impl Interpolator + 'static,
+        applier: impl TweenApplier<T> + 'static,
         completed_event: E,
     ) -> Self {
         Self::Once {
@@ -335,7 +335,7 @@ impl<T, E> Tween<T, E> {
                     TweenProgress::Done { surplus } => {
                         *count += 1;
                         if duration <= surplus && *times == RepeatTimes::Infinite {
-                            #[cfg(features = "bevy")]
+                            #[cfg(feature = "bevy")]
                             bevy::log::error!("Found infinite repeating tween with zero duration child (infinite loop)");
                             return TweenProgress::Running;
                         }
