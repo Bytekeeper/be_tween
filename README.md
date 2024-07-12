@@ -18,6 +18,8 @@ I used bevy_tweening at first. But it has some limits:
 I did at first try to tweak bevy_tweening. But in the end decided to write my own library - it's fun and more variety in choice is a good thing.
 
 ## Version
+
 | bevy | be_tween |
+| ---- | -------- |
 | 0.14 | 0.5 |
 | 0.13 | 0.4 |
