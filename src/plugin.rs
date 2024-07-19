@@ -1,4 +1,5 @@
 use crate::tween::*;
+use bevy::audio::Volume;
 use bevy::color::ColorRange;
 use bevy::prelude::*;
 use std::marker::PhantomData;
@@ -72,6 +73,7 @@ pub struct TweenTweenTranslation {
 pub struct PlayTween<T, E, I> {
     tween: Tween<T, E>,
     despawn: bool,
+    remove: bool,
     _time: PhantomData<I>,
 }
 
@@ -99,6 +101,18 @@ pub struct TweenBackgroundColor {
     pub end: Color,
 }
 
+#[derive(Default, Debug, Clone, Copy)]
+pub struct TweenVolume {
+    pub start: Volume,
+    pub end: Volume,
+}
+
+impl TweenApplier<AudioSink> for TweenVolume {
+    fn apply(&mut self, target: &mut AudioSink, value: f32) {
+        target.set_volume(self.start.get().lerp(*self.end, value));
+    }
+}
+
 pub struct DefaultTweenPlugin<E> {
     _phantom: std::marker::PhantomData<E>,
 }
@@ -122,13 +136,23 @@ impl<T, E, I> PlayTween<T, E, I> {
         Self {
             tween,
             despawn: false,
+            remove: false,
             _time: default(),
         }
     }
 
+    /// After completing this tween, despawn the entity.
     pub fn despawn(self) -> Self {
         Self {
             despawn: true,
+            ..self
+        }
+    }
+
+    // After completing this tween, remove it (the component).
+    pub fn remove(self) -> Self {
+        Self {
+            remove: true,
             ..self
         }
     }
@@ -159,6 +183,8 @@ impl<E: Event + Clone> Plugin for DefaultTweenPlugin<E> {
                 play_tween_animation::<Sprite, E, Real>,
                 play_tween_animation::<BackgroundColor, E, ()>,
                 play_tween_animation::<BackgroundColor, E, Real>,
+                play_tween_animation::<AudioSink, E, ()>,
+                play_tween_animation::<AudioSink, E, Real>,
                 play_tween_animation::<TweenBuffer<TweenTranslation>, E, ()>,
                 play_tween_animation::<TweenBuffer<TweenTranslation>, E, Real>,
                 play_buffered_tween_animation::<Transform, TweenTranslation, E, ()>,
@@ -203,8 +229,15 @@ pub fn play_buffered_tween_animation<
             .advance(&mut tmp_target, &mut event_writer, time.delta());
         *target = tmp_target.0;
         *tween_buffer = tmp_target.1;
-        if play.despawn && matches!(result, TweenProgress::Done { .. }) {
-            commands.entity(entity).despawn();
+        if matches!(result, TweenProgress::Done { .. }) {
+            if play.remove {
+                commands
+                    .entity(entity)
+                    .remove::<PlayTween<(T, TweenBuffer<W>), E, I>>();
+            }
+            if play.despawn {
+                commands.entity(entity).despawn();
+            }
         }
     }
 }
@@ -219,8 +252,13 @@ pub fn play_tween_animation<T: Component, E: Event + Clone, I: Default + Send + 
         let result = play
             .tween
             .advance(&mut target, &mut event_writer, time.delta());
-        if play.despawn && matches!(result, TweenProgress::Done { .. }) {
-            commands.entity(entity).despawn();
+        if matches!(result, TweenProgress::Done { .. }) {
+            if play.remove {
+                commands.entity(entity).remove::<PlayTween<T, E, I>>();
+            }
+            if play.despawn {
+                commands.entity(entity).despawn();
+            }
         }
     }
 }
