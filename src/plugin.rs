@@ -1,6 +1,7 @@
 use crate::tween::*;
 use bevy::audio::Volume;
 use bevy::color::ColorRange;
+use bevy::ecs::component::Mutable;
 use bevy::prelude::*;
 use std::marker::PhantomData;
 
@@ -109,7 +110,9 @@ pub struct TweenVolume {
 
 impl TweenApplier<AudioSink> for TweenVolume {
     fn apply(&mut self, target: &mut AudioSink, value: f32) {
-        target.set_volume(self.start.get().lerp(*self.end, value));
+        target.set_volume(Volume::Linear(
+            self.start.to_linear().lerp(self.end.to_linear(), value),
+        ));
     }
 }
 
@@ -117,7 +120,9 @@ pub struct DefaultTweenPlugin<E> {
     _phantom: std::marker::PhantomData<E>,
 }
 
-impl Event for NoEvent {}
+impl Event for NoEvent {
+    type Traversal = ();
+}
 
 impl<T, E> PlayTween<T, E, ()> {
     pub fn new(tween: Tween<T, E>) -> Self {
@@ -197,12 +202,12 @@ impl<E: Event + Clone> Plugin for DefaultTweenPlugin<E> {
 
 impl<'w, E: Event + Clone> EventSender<E> for EventWriter<'w, E> {
     fn send(&mut self, event: &E) {
-        EventWriter::send(self, event.clone());
+        EventWriter::write(self, event.clone());
     }
 }
 
 pub fn play_buffered_tween_animation<
-    T: Component + Clone,
+    T: Component<Mutability = Mutable> + Clone,
     W: TweenApplier<T> + 'static + Clone,
     E: Event + Clone,
     I: Default + Send + Sync + 'static,
@@ -242,7 +247,11 @@ pub fn play_buffered_tween_animation<
     }
 }
 
-pub fn play_tween_animation<T: Component, E: Event + Clone, I: Default + Send + Sync + 'static>(
+pub fn play_tween_animation<
+    T: Component<Mutability = Mutable>,
+    E: Event + Clone,
+    I: Default + Send + Sync + 'static,
+>(
     time: Res<Time<I>>,
     mut tweens_to_play: Query<(Entity, &mut PlayTween<T, E, I>, &mut T)>,
     mut event_writer: EventWriter<E>,
@@ -344,7 +353,7 @@ mod tests {
 
         // THEN
         let events = world.get_resource::<Events<TestEvent>>().unwrap();
-        let mut reader = events.get_reader();
+        let mut reader = events.get_cursor();
         assert_eq!(reader.read(events).count(), 1);
     }
 

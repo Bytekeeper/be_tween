@@ -1,6 +1,5 @@
+use bevy::math::{curve::EaseFunction, Curve};
 use dyn_clone::DynClone;
-use interpolation::Ease;
-pub use interpolation::EaseFunction;
 use std::time::Duration;
 
 pub trait TweenApplier<T>: Send + Sync + DynClone {
@@ -92,7 +91,7 @@ impl Interpolator for Lerp {
 
 impl Interpolator for EaseFunction {
     fn interpolate(&self, position: f32) -> f32 {
-        position.calc(*self)
+        self.sample_unchecked(position)
     }
 }
 

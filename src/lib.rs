@@ -38,7 +38,7 @@
 //!
 //! commands.spawn((
 //!     // Spawn an entity to animate the position of.
-//!     TransformBundle::default(),
+//!     Transform::default(),
 //!     // Add an Animator component to control and execute the animation.
 //!     PlayTween::new(tween),
 //! ));
@@ -100,7 +100,7 @@
 //!
 //! commands.spawn((
 //!     // Spawn an entity to animate the position of.
-//!     TransformBundle::default(),
+//!     Transform::default(),
 //!     // Now play the tweens
 //!     PlayTween::new(tween_translation),
 //!     // Note that both will be played in parallel!
