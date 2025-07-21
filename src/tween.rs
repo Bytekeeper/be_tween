@@ -1,4 +1,4 @@
-use bevy::math::{curve::EaseFunction, Curve};
+use bevy::math::{Curve, curve::EaseFunction};
 use dyn_clone::DynClone;
 use std::time::Duration;
 
@@ -13,54 +13,40 @@ pub trait Interpolator: Send + Sync + 'static + DynClone {
 dyn_clone::clone_trait_object!(<T> TweenApplier<T>);
 dyn_clone::clone_trait_object!(Interpolator);
 
-pub trait EventSender<E> {
-    fn send(&mut self, event: &E);
-}
-
-#[cfg_attr(feature = "bevy", derive(bevy::prelude::Component))]
-#[derive(Copy, Clone, Default)]
-pub struct NoEvent;
-
 #[derive(Copy, Clone)]
 pub struct Lerp;
 
 #[derive(Clone)]
-pub enum Tween<T, E> {
+pub enum Tween<T> {
     Once {
         duration: Duration,
         elapsed: Duration,
         function: Box<dyn Interpolator>,
         applier: Box<dyn TweenApplier<T> + 'static>,
-        completed_event: Option<E>,
     },
     Repeat {
-        tween: Box<Tween<T, E>>,
+        tween: Box<Tween<T>>,
         times: RepeatTimes,
         count: usize,
-        completed_event: Option<E>,
     },
     Sequence {
         index: usize,
-        tweens: Vec<Tween<T, E>>,
-        completed_event: Option<E>,
+        tweens: Vec<Tween<T>>,
     },
     Parallel {
-        tweens: Vec<Tween<T, E>>,
-        completed_event: Option<E>,
+        tweens: Vec<Tween<T>>,
     },
     Pause {
         duration: Duration,
         elapsed: Duration,
-        completed_event: Option<E>,
     },
 }
 
-impl<T, E> Default for Tween<T, E> {
+impl<T> Default for Tween<T> {
     fn default() -> Self {
         Self::Pause {
             duration: Duration::ZERO,
             elapsed: Duration::ZERO,
-            completed_event: None,
         }
     }
 }
@@ -95,11 +81,7 @@ impl Interpolator for EaseFunction {
     }
 }
 
-impl<E> EventSender<E> for NoEvent {
-    fn send(&mut self, _: &E) {}
-}
-
-impl<T> Tween<T, NoEvent> {
+impl<T> Tween<T> {
     pub fn new(
         duration: Duration,
         function: impl Interpolator + 'static,
@@ -110,24 +92,6 @@ impl<T> Tween<T, NoEvent> {
             elapsed: Duration::ZERO,
             function: Box::new(function),
             applier: Box::new(applier),
-            completed_event: None,
-        }
-    }
-}
-
-impl<T, E> Tween<T, E> {
-    pub fn new_with_event(
-        duration: Duration,
-        function: impl Interpolator + 'static,
-        applier: impl TweenApplier<T> + 'static,
-        completed_event: E,
-    ) -> Self {
-        Self::Once {
-            duration,
-            elapsed: Duration::ZERO,
-            function: Box::new(function),
-            applier: Box::new(applier),
-            completed_event: Some(completed_event),
         }
     }
 
@@ -135,53 +99,28 @@ impl<T, E> Tween<T, E> {
         Self::Pause {
             duration,
             elapsed: Duration::ZERO,
-            completed_event: None,
         }
     }
 
-    pub fn repeat(times: RepeatTimes, tween: Tween<T, E>) -> Self {
+    pub fn repeat(times: RepeatTimes, tween: Tween<T>) -> Self {
         Self::Repeat {
             times,
             count: 0,
             tween: Box::new(tween),
-            completed_event: None,
         }
     }
 
-    pub fn sequence(tweens: impl Into<Vec<Tween<T, E>>>) -> Self {
+    pub fn sequence(tweens: impl Into<Vec<Tween<T>>>) -> Self {
         Self::Sequence {
             index: 0,
             tweens: tweens.into(),
-            completed_event: None,
         }
     }
 
-    pub fn parallel(tweens: impl Into<Vec<Tween<T, E>>>) -> Self {
+    pub fn parallel(tweens: impl Into<Vec<Tween<T>>>) -> Self {
         Self::Parallel {
             tweens: tweens.into(),
-            completed_event: None,
         }
-    }
-
-    pub fn with_completed(mut self, event: E) -> Self {
-        match &mut self {
-            Tween::Once {
-                completed_event, ..
-            }
-            | Tween::Repeat {
-                completed_event, ..
-            }
-            | Tween::Sequence {
-                completed_event, ..
-            }
-            | Tween::Parallel {
-                completed_event, ..
-            }
-            | Tween::Pause {
-                completed_event, ..
-            } => *completed_event = Some(event),
-        }
-        self
     }
 
     pub fn skip(&mut self, mut duration: Duration) -> TweenProgress {
@@ -219,7 +158,9 @@ impl<T, E> Tween<T, E> {
                         *count += 1;
                         if duration <= surplus && *times == RepeatTimes::Infinite {
                             #[cfg(feature = "bevy")]
-                            bevy::log::error!("Found infinite repeating tween with zero duration child (infinite loop)");
+                            bevy::log::error!(
+                                "Found infinite repeating tween with zero duration child (infinite loop)"
+                            );
                             return TweenProgress::Running;
                         }
                         duration = surplus;
@@ -284,27 +225,18 @@ impl<T, E> Tween<T, E> {
         }
     }
 
-    pub fn advance<'a, ES: EventSender<E>>(
-        &'a mut self,
-        target: &'a mut T,
-        event_sender: &'a mut ES,
-        mut duration: Duration,
-    ) -> TweenProgress {
+    pub fn advance<'a>(&'a mut self, target: &'a mut T, mut duration: Duration) -> TweenProgress {
         match self {
             Tween::Once {
                 duration: tween_duration,
                 elapsed,
                 function,
                 applier,
-                completed_event,
             } => {
                 *elapsed += duration;
                 let result = if elapsed >= tween_duration {
                     let surplus = *elapsed - *tween_duration;
                     *elapsed = *tween_duration;
-                    if let Some(e) = completed_event {
-                        event_sender.send(e);
-                    }
                     TweenProgress::Done { surplus }
                 } else {
                     TweenProgress::Running
@@ -317,25 +249,23 @@ impl<T, E> Tween<T, E> {
                 tween,
                 times,
                 count,
-                completed_event,
             } => loop {
                 let done = match times {
                     RepeatTimes::N(amount) => count >= amount,
                     RepeatTimes::Infinite => false,
                 };
                 if done {
-                    if let Some(e) = completed_event {
-                        event_sender.send(e);
-                    }
                     return TweenProgress::Done { surplus: duration };
                 }
-                let delegate_result = tween.advance(target, event_sender, duration);
+                let delegate_result = tween.advance(target, duration);
                 match delegate_result {
                     TweenProgress::Done { surplus } => {
                         *count += 1;
                         if duration <= surplus && *times == RepeatTimes::Infinite {
                             #[cfg(feature = "bevy")]
-                            bevy::log::error!("Found infinite repeating tween with zero duration child (infinite loop)");
+                            bevy::log::error!(
+                                "Found infinite repeating tween with zero duration child (infinite loop)"
+                            );
                             return TweenProgress::Running;
                         }
                         duration = surplus;
@@ -346,13 +276,9 @@ impl<T, E> Tween<T, E> {
                     }
                 }
             },
-            Tween::Sequence {
-                index,
-                tweens,
-                completed_event,
-            } => {
+            Tween::Sequence { index, tweens } => {
                 while let Some(tween) = tweens.get_mut(*index) {
-                    let delegate_result = tween.advance(target, event_sender, duration);
+                    let delegate_result = tween.advance(target, duration);
                     match delegate_result {
                         TweenProgress::Done { surplus } => {
                             *index += 1;
@@ -363,19 +289,13 @@ impl<T, E> Tween<T, E> {
                         }
                     }
                 }
-                if let Some(e) = completed_event {
-                    event_sender.send(e);
-                }
                 TweenProgress::Done { surplus: duration }
             }
-            Tween::Parallel {
-                tweens,
-                completed_event,
-            } => {
-                let result = tweens.iter_mut().fold(
-                    TweenProgress::Done { surplus: duration },
-                    |acc, tween| {
-                        let delegate_result = tween.advance(target, event_sender, duration);
+            Tween::Parallel { tweens } => {
+                tweens
+                    .iter_mut()
+                    .fold(TweenProgress::Done { surplus: duration }, |acc, tween| {
+                        let delegate_result = tween.advance(target, duration);
                         if let (
                             TweenProgress::Done {
                                 surplus: acc_surplus,
@@ -391,27 +311,16 @@ impl<T, E> Tween<T, E> {
                         } else {
                             TweenProgress::Running
                         }
-                    },
-                );
-                if matches!(result, TweenProgress::Done { .. }) {
-                    if let Some(e) = completed_event {
-                        event_sender.send(e);
-                    }
-                }
-                result
+                    })
             }
             Tween::Pause {
                 duration: tween_duration,
                 elapsed,
-                completed_event,
             } => {
                 *elapsed += duration;
                 if elapsed >= tween_duration {
                     let surplus = *elapsed - *tween_duration;
                     *elapsed = *tween_duration;
-                    if let Some(e) = completed_event {
-                        event_sender.send(e);
-                    }
                     TweenProgress::Done { surplus }
                 } else {
                     TweenProgress::Running
@@ -461,7 +370,7 @@ mod tests {
         tween.skip(Duration::from_millis(3));
 
         let mut value = 0.0;
-        tween.advance(&mut value, &mut NoEvent, Duration::from_millis(1));
+        tween.advance(&mut value, Duration::from_millis(1));
 
         let Tween::Once { elapsed, .. } = tween else {
             panic!()
@@ -478,7 +387,7 @@ mod tests {
         );
 
         let mut value = 0.0;
-        let progress = tween.advance(&mut value, &mut NoEvent, Duration::from_millis(1500));
+        let progress = tween.advance(&mut value, Duration::from_millis(1500));
         assert_eq!(progress, TweenProgress::Running);
 
         let Tween::Repeat {
@@ -496,7 +405,7 @@ mod tests {
         assert_eq!(elapsed, Duration::from_millis(500));
         assert_eq!(value, 2.0);
 
-        let progress = tween.advance(&mut value, &mut NoEvent, Duration::from_millis(505));
+        let progress = tween.advance(&mut value, Duration::from_millis(505));
         assert_eq!(
             progress,
             TweenProgress::Done {
@@ -530,15 +439,15 @@ mod tests {
         ]);
 
         let mut value = 0.0;
-        let progress = tween.advance(&mut value, &mut NoEvent, Duration::from_millis(500));
+        let progress = tween.advance(&mut value, Duration::from_millis(500));
         assert_eq!(progress, TweenProgress::Running);
         assert_eq!(value, 2.0);
 
-        let progress = tween.advance(&mut value, &mut NoEvent, Duration::from_millis(1000));
+        let progress = tween.advance(&mut value, Duration::from_millis(1000));
         assert_eq!(progress, TweenProgress::Running);
         assert_eq!(value, 4.0);
 
-        let progress = tween.advance(&mut value, &mut NoEvent, Duration::from_millis(2000));
+        let progress = tween.advance(&mut value, Duration::from_millis(2000));
         assert_eq!(
             progress,
             TweenProgress::Done {
@@ -559,7 +468,7 @@ mod tests {
         ]);
 
         let mut value = 0.0;
-        let progress = tween.advance(&mut value, &mut NoEvent, Duration::from_millis(20000));
+        let progress = tween.advance(&mut value, Duration::from_millis(20000));
         assert_eq!(progress, TweenProgress::Running);
         assert_eq!(value, 0.0);
     }
@@ -575,10 +484,10 @@ mod tests {
         ]);
 
         let mut value = 0.0;
-        let progress = tween.advance(&mut value, &mut NoEvent, Duration::from_millis(1000));
+        let progress = tween.advance(&mut value, Duration::from_millis(1000));
         assert_eq!(progress, TweenProgress::Running);
 
-        let progress = tween.advance(&mut value, &mut NoEvent, Duration::from_millis(1000));
+        let progress = tween.advance(&mut value, Duration::from_millis(1000));
         assert_eq!(
             progress,
             TweenProgress::Done {

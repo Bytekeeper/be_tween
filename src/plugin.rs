@@ -37,11 +37,10 @@ impl TweenApplier<TweenBuffer<TweenTranslation>> for End<TweenTranslation> {
 #[derive(Bundle, Default)]
 pub struct PlayBufferedTweenBundle<
     T: Component,
-    E: Event,
     B: 'static + Send + Sync,
     I: 'static + Send + Sync = (),
 > {
-    pub play_tween: PlayTween<(T, TweenBuffer<B>), E, I>,
+    pub play_tween: PlayTween<(T, TweenBuffer<B>), I>,
     pub buffer: TweenBuffer<B>,
 }
 
@@ -71,8 +70,8 @@ pub struct TweenTweenTranslation {
 }
 
 #[derive(Component, Clone, Default)]
-pub struct PlayTween<T, E, I> {
-    tween: Tween<T, E>,
+pub struct PlayTween<T, I> {
+    tween: Tween<T>,
     despawn: bool,
     remove: bool,
     _time: PhantomData<I>,
@@ -116,28 +115,23 @@ impl TweenApplier<AudioSink> for TweenVolume {
     }
 }
 
-pub struct DefaultTweenPlugin<E> {
-    _phantom: std::marker::PhantomData<E>,
-}
+#[derive(Default)]
+pub struct TweenPlugin;
 
-impl Event for NoEvent {
-    type Traversal = ();
-}
-
-impl<T, E> PlayTween<T, E, ()> {
-    pub fn new(tween: Tween<T, E>) -> Self {
+impl<T> PlayTween<T, ()> {
+    pub fn new(tween: Tween<T>) -> Self {
         Self::new_with_time(tween)
     }
 }
 
-impl<T, E> PlayTween<T, E, Real> {
-    pub fn new_real_time(tween: Tween<T, E>) -> Self {
+impl<T> PlayTween<T, Real> {
+    pub fn new_real_time(tween: Tween<T>) -> Self {
         Self::new_with_time(tween)
     }
 }
 
-impl<T, E, I> PlayTween<T, E, I> {
-    pub fn new_with_time(tween: Tween<T, E>) -> Self {
+impl<T, I> PlayTween<T, I> {
+    pub fn new_with_time(tween: Tween<T>) -> Self {
         Self {
             tween,
             despawn: false,
@@ -163,63 +157,41 @@ impl<T, E, I> PlayTween<T, E, I> {
     }
 }
 
-impl<E> DefaultTweenPlugin<E> {
-    pub fn new() -> Self {
-        Self {
-            _phantom: Default::default(),
-        }
-    }
-}
-
-impl<E> Default for DefaultTweenPlugin<E> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<E: Event + Clone> Plugin for DefaultTweenPlugin<E> {
+impl Plugin for TweenPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<E>().add_systems(
+        app.add_systems(
             Update,
             (
-                play_tween_animation::<Transform, E, ()>,
-                play_tween_animation::<Transform, E, Real>,
-                play_tween_animation::<Sprite, E, ()>,
-                play_tween_animation::<Sprite, E, Real>,
-                play_tween_animation::<BackgroundColor, E, ()>,
-                play_tween_animation::<BackgroundColor, E, Real>,
-                play_tween_animation::<AudioSink, E, ()>,
-                play_tween_animation::<AudioSink, E, Real>,
-                play_tween_animation::<TweenBuffer<TweenTranslation>, E, ()>,
-                play_tween_animation::<TweenBuffer<TweenTranslation>, E, Real>,
-                play_buffered_tween_animation::<Transform, TweenTranslation, E, ()>,
-                play_buffered_tween_animation::<Transform, TweenTranslation, E, Real>,
+                play_tween_animation::<Transform, ()>,
+                play_tween_animation::<Transform, Real>,
+                play_tween_animation::<Sprite, ()>,
+                play_tween_animation::<Sprite, Real>,
+                play_tween_animation::<BackgroundColor, ()>,
+                play_tween_animation::<BackgroundColor, Real>,
+                play_tween_animation::<AudioSink, ()>,
+                play_tween_animation::<AudioSink, Real>,
+                play_tween_animation::<TweenBuffer<TweenTranslation>, ()>,
+                play_tween_animation::<TweenBuffer<TweenTranslation>, Real>,
+                play_buffered_tween_animation::<Transform, TweenTranslation, ()>,
+                play_buffered_tween_animation::<Transform, TweenTranslation, Real>,
             )
                 .chain(),
         );
     }
 }
 
-impl<'w, E: Event + Clone> EventSender<E> for EventWriter<'w, E> {
-    fn send(&mut self, event: &E) {
-        EventWriter::write(self, event.clone());
-    }
-}
-
 pub fn play_buffered_tween_animation<
     T: Component<Mutability = Mutable> + Clone,
     W: TweenApplier<T> + 'static + Clone,
-    E: Event + Clone,
     I: Default + Send + Sync + 'static,
 >(
     time: Res<Time<I>>,
     mut tweens_to_play: Query<(
         Entity,
-        &mut PlayTween<(T, TweenBuffer<W>), E, I>,
+        &mut PlayTween<(T, TweenBuffer<W>), I>,
         &mut T,
         Option<&mut TweenBuffer<W>>,
     )>,
-    mut event_writer: EventWriter<E>,
     mut commands: Commands,
 ) {
     for (entity, mut play, mut target, tween_buffer) in tweens_to_play.iter_mut() {
@@ -229,16 +201,14 @@ pub fn play_buffered_tween_animation<
         };
         // TODO find a way without moving data around
         let mut tmp_target = (target.clone(), tween_buffer.clone());
-        let result = play
-            .tween
-            .advance(&mut tmp_target, &mut event_writer, time.delta());
+        let result = play.tween.advance(&mut tmp_target, time.delta());
         *target = tmp_target.0;
         *tween_buffer = tmp_target.1;
         if matches!(result, TweenProgress::Done { .. }) {
             if play.remove {
                 commands
                     .entity(entity)
-                    .remove::<PlayTween<(T, TweenBuffer<W>), E, I>>();
+                    .remove::<PlayTween<(T, TweenBuffer<W>), I>>();
             }
             if play.despawn {
                 commands.entity(entity).despawn();
@@ -249,21 +219,17 @@ pub fn play_buffered_tween_animation<
 
 pub fn play_tween_animation<
     T: Component<Mutability = Mutable>,
-    E: Event + Clone,
     I: Default + Send + Sync + 'static,
 >(
     time: Res<Time<I>>,
-    mut tweens_to_play: Query<(Entity, &mut PlayTween<T, E, I>, &mut T)>,
-    mut event_writer: EventWriter<E>,
+    mut tweens_to_play: Query<(Entity, &mut PlayTween<T, I>, &mut T)>,
     mut commands: Commands,
 ) {
     for (entity, mut play, mut target) in tweens_to_play.iter_mut() {
-        let result = play
-            .tween
-            .advance(&mut target, &mut event_writer, time.delta());
+        let result = play.tween.advance(&mut target, time.delta());
         if matches!(result, TweenProgress::Done { .. }) {
             if play.remove {
-                commands.entity(entity).remove::<PlayTween<T, E, I>>();
+                commands.entity(entity).remove::<PlayTween<T, I>>();
             }
             if play.despawn {
                 commands.entity(entity).despawn();
@@ -302,9 +268,6 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
-    #[derive(Event, Clone)]
-    struct TestEvent;
-
     #[test]
     fn test_transform_tween() {
         // GIVEN
@@ -313,8 +276,7 @@ mod tests {
         time.advance_by(Duration::from_secs(1));
         world.insert_resource(time);
         world.insert_resource(Time::<Real>::default());
-        world.init_resource::<Events<NoEvent>>();
-        let play_tween_id = world.register_system(play_tween_animation::<Transform, NoEvent, ()>);
+        let play_tween_id = world.register_system(play_tween_animation::<Transform, ()>);
         let play_tween = PlayTween::new(Tween::new(
             Duration::from_secs(2),
             Lerp,
@@ -334,56 +296,28 @@ mod tests {
     }
 
     #[test]
-    fn test_tween_event() {
-        // GIVEN
-        let mut world = World::new();
-        let mut time = Time::<()>::default();
-        time.advance_by(Duration::from_secs(3));
-        world.insert_resource(time);
-        world.insert_resource(Time::<Real>::default());
-        world.init_resource::<Events<TestEvent>>();
-        let play_tween_id = world.register_system(play_tween_animation::<Transform, TestEvent, ()>);
-        let play_tween = PlayTween::new(
-            Tween::<Transform, TestEvent>::pause(Duration::from_secs(2)).with_completed(TestEvent),
-        );
-        world.spawn((Transform::default(), play_tween));
-
-        // WHEN
-        world.run_system(play_tween_id).unwrap();
-
-        // THEN
-        let events = world.get_resource::<Events<TestEvent>>().unwrap();
-        let mut reader = events.get_cursor();
-        assert_eq!(reader.read(events).count(), 1);
-    }
-
-    #[test]
     fn test_real_time() {
         // GIVEN
         let mut world = World::new();
-        let mut time = Time::<()>::default();
-        time.advance_by(Duration::from_secs(2));
-        world.insert_resource(time);
         let mut time = Time::<Real>::default();
         time.advance_by(Duration::from_secs(1));
         world.insert_resource(time);
-        world.init_resource::<Events<TestEvent>>();
-        let play_tween_id_real =
-            world.register_system(play_tween_animation::<Transform, TestEvent, Real>);
-        let play_tween_id_virtual =
-            world.register_system(play_tween_animation::<Transform, TestEvent, ()>);
-        let play_tween = PlayTween::new_real_time(
-            Tween::<Transform, TestEvent>::pause(Duration::from_secs(2)).with_completed(TestEvent),
-        );
-        world.spawn((Transform::default(), play_tween));
+        let play_tween_id_real = world.register_system(play_tween_animation::<Transform, Real>);
+        let play_tween =
+            PlayTween::new_real_time(Tween::<Transform>::pause(Duration::from_secs(2)));
+        let entity = world.spawn((Transform::default(), play_tween)).id();
 
         // WHEN
         world.run_system(play_tween_id_real).unwrap();
-        world.run_system(play_tween_id_virtual).unwrap();
 
         // THEN
-        let events = world.get_resource::<Events<TestEvent>>().unwrap();
-        assert!(events.is_empty());
+        let mut tween = world.get_mut::<PlayTween<Transform, Real>>(entity).unwrap();
+        assert_eq!(
+            tween.tween.skip(Duration::from_secs(2)),
+            TweenProgress::Done {
+                surplus: Duration::from_secs(1)
+            }
+        );
     }
 
     #[test]
@@ -396,14 +330,12 @@ mod tests {
         time.advance_by(Duration::from_secs(1));
         world.insert_resource(time);
         world.insert_resource(time);
-        world.init_resource::<Events<NoEvent>>();
-        let play_tween_id_real = world.register_system(
-            play_buffered_tween_animation::<Transform, TweenTranslation, NoEvent, Real>,
-        );
-        let play_tween_tween = world
-            .register_system(play_tween_animation::<TweenBuffer<TweenTranslation>, NoEvent, ()>);
-        let play_tween_tween_real = world
-            .register_system(play_tween_animation::<TweenBuffer<TweenTranslation>, NoEvent, Real>);
+        let play_tween_id_real = world
+            .register_system(play_buffered_tween_animation::<Transform, TweenTranslation, Real>);
+        let play_tween_tween =
+            world.register_system(play_tween_animation::<TweenBuffer<TweenTranslation>, ()>);
+        let play_tween_tween_real =
+            world.register_system(play_tween_animation::<TweenBuffer<TweenTranslation>, Real>);
 
         let real_time_tween = PlayTween::new_real_time(Tween::new(
             Duration::from_secs(2),

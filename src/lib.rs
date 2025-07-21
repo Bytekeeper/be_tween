@@ -11,9 +11,7 @@
 //! App::default()
 //!     .add_plugins(DefaultPlugins)
 //!     // Add the plugin - NoEvent means that no custom events will be used
-//!     .add_plugins(DefaultTweenPlugin::<NoEvent>::new())
-//!     // Add the systems performing the tweening
-//!     .add_systems(Update, (play_tween_animation::<Transform, NoEvent, ()>, play_tween_animation::<Sprite, NoEvent, ()>))
+//!     .add_plugins(TweenPlugin)
 //!     .run();
 //! ```
 //!
