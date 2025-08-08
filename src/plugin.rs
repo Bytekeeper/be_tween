@@ -4,6 +4,7 @@ use bevy::color::ColorRange;
 use bevy::ecs::component::Mutable;
 use bevy::prelude::*;
 use std::marker::PhantomData;
+use std::time::Duration;
 
 #[derive(Clone)]
 pub struct Start<T>(pub T);
@@ -115,6 +116,16 @@ impl TweenApplier<AudioSink> for TweenVolume {
     }
 }
 
+pub trait ToTween<T> {
+    fn tween(self, duration: Duration, function: impl Interpolator + 'static) -> Tween<T>;
+}
+
+impl<T, U: TweenApplier<T> + 'static> ToTween<T> for U {
+    fn tween(self, duration: Duration, function: impl Interpolator + 'static) -> Tween<T> {
+        Tween::new(duration, function, self)
+    }
+}
+
 #[derive(Default)]
 pub struct TweenPlugin;
 
@@ -149,7 +160,7 @@ impl<T, I> PlayTween<T, I> {
     }
 
     // After completing this tween, remove it (the component).
-    pub fn remove(self) -> Self {
+    pub fn remove_when_done(self) -> Self {
         Self {
             remove: true,
             ..self
