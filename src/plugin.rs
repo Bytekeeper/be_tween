@@ -96,6 +96,34 @@ pub struct TweenSpriteColor {
     pub end: Color,
 }
 
+impl TweenSpriteColor {
+    pub fn new(start: impl Into<Color>, end: impl Into<Color>) -> Self {
+        Self {
+            start: start.into(),
+            end: end.into(),
+        }
+    }
+}
+
+pub trait TweenTo {
+    type Target;
+
+    fn tween_to(self, to: impl Into<Self>) -> impl TweenApplier<Self::Target>
+    where
+        Self: Sized;
+}
+
+impl<I: Into<Color>> TweenTo for I {
+    type Target = Sprite;
+
+    fn tween_to(self, to: impl Into<Self>) -> impl TweenApplier<Self::Target> {
+        TweenSpriteColor {
+            start: self.into(),
+            end: to.into().into(),
+        }
+    }
+}
+
 #[derive(Default, Debug, Clone, Copy)]
 pub struct TweenBackgroundColor {
     pub start: Color,
